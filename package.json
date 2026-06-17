@@ -9,5 +9,5 @@
   "dependencies": {
     "electron": "^42.0.0",
     "keytar": "^7.9.0"
-  },
+  }
 }
