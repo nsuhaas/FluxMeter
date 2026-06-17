@@ -1,0 +1,13 @@
+{
+  "name": "fluxmeter",
+  "version": "1.0.0",
+  "description": "Floating widget to monitor Claude Pro/Max credit usage",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^42.0.0",
+    "keytar": "^7.9.0"
+  },
+}
