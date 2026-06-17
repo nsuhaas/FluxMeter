@@ -1,8 +1,21 @@
 # FluxMeter
 
-A floating always-on-top desktop widget that monitors your Claude Pro/Max credit usage in real time.
+FluxMeter is a lightweight desktop widget for macOS that shows you how much of your Claude Pro/Max credit you've used — in real time, always visible on your screen.
+
+Think of it like a fuel gauge for your AI usage. If you're a heavy Claude user, you've probably hit the rate limit mid-conversation with no warning it was coming. FluxMeter sits in the corner of your screen and gives you a live heads-up so you can pace yourself.
 
 ![FluxMeter Widget](https://github.com/nsuhaas/FluxMeter/raw/main/preview.png)
+
+## Built With
+
+- **Electron** — wraps the app as a native macOS desktop window, always on top, with a system tray icon
+- **Node.js** — handles credential reading, API polling, and window management in the background
+- **HTML / CSS / SVG** — the entire UI is vanilla web tech; the fuel tank, wave animation, and color transitions are all pure SVG and CSS
+- **macOS Keychain** — where your Claude OAuth token lives; read securely at runtime via the `security` CLI
+- **Anthropic OAuth API** — the single endpoint that returns your live session and weekly usage data
+- **Electron IPC + contextBridge** — safely passes data between the Node.js backend and the browser UI without exposing Node APIs to the renderer
+
+No frameworks, no bundlers, no build step — just vanilla web tech inside Electron.
 
 ## Features
 
