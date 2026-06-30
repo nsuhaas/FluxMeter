@@ -4,23 +4,24 @@ const fs = require('fs');
 const os = require('os');
 const { execSync } = require('child_process');
 
+const IS_MAC   = process.platform === 'darwin';
+const IS_WIN   = process.platform === 'win32';
+const IS_LINUX = process.platform === 'linux';
+
 let mainWindow = null;
 let tray = null;
 let pollInterval = null;
 let cachedUsage = null;
-let lastFetchTime = null;
 let isMinimized = false;
 
 const CONFIG_DIR = path.join(os.homedir(), '.fluxmeter');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
-// ── Token helpers ──────────────────────────────────────────────────────────────
+// ── Config helpers ─────────────────────────────────────────────────────────────
 
 function readConfig() {
   try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    }
+    if (fs.existsSync(CONFIG_FILE)) return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
   } catch (_) {}
   return {};
 }
@@ -34,43 +35,76 @@ function writeConfig(data) {
   }
 }
 
+// ── Extract token from a parsed credentials object ────────────────────────────
+
+function extractToken(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (obj?.claudeAiOauth?.accessToken) return obj.claudeAiOauth.accessToken;
+  if (obj?.access_token) return obj.access_token;
+  // Nested one level (some Claude Code versions)
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === 'object') {
+      if (v?.claudeAiOauth?.accessToken) return v.claudeAiOauth.accessToken;
+      if (v?.access_token) return v.access_token;
+    }
+  }
+  return null;
+}
+
+// ── Token resolution (platform-aware) ─────────────────────────────────────────
+
 async function getToken() {
-  // 1. Check local config first (user-pasted token)
+  // 1. User-pasted token always wins
   const cfg = readConfig();
   if (cfg.access_token) return cfg.access_token;
 
-  // 2. macOS Keychain via keytar
-  if (process.platform === 'darwin') {
-    // Use macOS `security` CLI — more reliable than keytar in Electron context
+  // 2. macOS — Keychain via `security` CLI
+  if (IS_MAC) {
     try {
       const raw = execSync(
         'security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null',
         { encoding: 'utf8', timeout: 5000 }
       ).trim();
       if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          // Claude Code stores token under claudeAiOauth.accessToken
-          if (parsed?.claudeAiOauth?.accessToken) return parsed.claudeAiOauth.accessToken;
-          if (parsed?.access_token) return parsed.access_token;
-        } catch (_) {
-          if (raw.length > 10) return raw;
-        }
+        try { return extractToken(JSON.parse(raw)) || (raw.length > 10 ? raw : null); }
+        catch (_) { if (raw.length > 10) return raw; }
       }
     } catch (_) {}
   }
 
-  // 3. ~/.claude/.credentials.json (Linux / WSL / macOS fallback)
-  try {
+  // 3. Linux — ~/.claude/.credentials.json
+  if (IS_LINUX) {
     const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
-    if (fs.existsSync(credPath)) {
-      const creds = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-      if (creds.access_token) return creds.access_token;
-      // Some versions nest it
-      const vals = Object.values(creds);
-      for (const v of vals) {
-        if (v && typeof v === 'object' && v.access_token) return v.access_token;
+    try {
+      if (fs.existsSync(credPath)) {
+        return extractToken(JSON.parse(fs.readFileSync(credPath, 'utf8')));
       }
+    } catch (_) {}
+  }
+
+  // 4. Windows — %APPDATA%\Claude\.credentials.json then home fallback
+  if (IS_WIN) {
+    const winPaths = [
+      path.join(process.env.APPDATA || '', 'Claude', '.credentials.json'),
+      path.join(os.homedir(), '.claude', '.credentials.json'),
+      path.join(process.env.LOCALAPPDATA || '', 'Claude', '.credentials.json'),
+    ];
+    for (const p of winPaths) {
+      try {
+        if (fs.existsSync(p)) {
+          const token = extractToken(JSON.parse(fs.readFileSync(p, 'utf8')));
+          if (token) return token;
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 5. Generic fallback — works for WSL / any missed path
+  const fallbackPath = path.join(os.homedir(), '.claude', '.credentials.json');
+  try {
+    if (fs.existsSync(fallbackPath)) {
+      const token = extractToken(JSON.parse(fs.readFileSync(fallbackPath, 'utf8')));
+      if (token) return token;
     }
   } catch (_) {}
 
@@ -95,34 +129,26 @@ async function fetchUsage() {
     });
 
     if (res.status === 429) {
-      if (cachedUsage) {
-        mainWindow?.webContents.send('usage-update', { ...cachedUsage, stale: true });
-      }
+      if (cachedUsage) mainWindow?.webContents.send('usage-update', { ...cachedUsage, stale: true });
       return;
     }
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();
 
-    // Actual API shape: five_hour / seven_day / limits[]
     const sessionLimit = data?.limits?.find(l => l.group === 'session');
     const weeklyLimit  = data?.limits?.find(l => l.group === 'weekly');
 
-    // Read actual model from Claude Code's local stats cache
+    // Detect model from local stats cache
     let model = 'Pro';
     try {
       const statsPath = path.join(os.homedir(), '.claude', 'stats-cache.json');
       const stats = JSON.parse(fs.readFileSync(statsPath, 'utf8'));
       const modelKeys = Object.keys(stats?.modelUsage || {});
       if (modelKeys.length > 0) {
-        // Pick the model with most output tokens (most actively used)
         const best = modelKeys.reduce((a, b) =>
           (stats.modelUsage[a]?.outputTokens ?? 0) >= (stats.modelUsage[b]?.outputTokens ?? 0) ? a : b
         );
-        // Format: "claude-sonnet-4-6" → "Sonnet 4.6"
         model = best
           .replace(/^claude-/, '')
           .replace(/-(\d)/, ' $1')
@@ -140,7 +166,6 @@ async function fetchUsage() {
     };
 
     cachedUsage = payload;
-    lastFetchTime = Date.now();
     mainWindow?.webContents.send('usage-update', payload);
   } catch (err) {
     console.error('Fetch error:', err.message);
@@ -152,25 +177,24 @@ async function fetchUsage() {
   }
 }
 
-// ── Tray icon (1×1 png fallback if no asset) ──────────────────────────────────
+// ── Tray icon ─────────────────────────────────────────────────────────────────
 
-function createTrayIcon() {
-  // Create a tiny colored circle as the tray icon
-  const size = 16;
-  // Use a simple colored square as fallback
-  const img = nativeImage.createEmpty();
-  return img;
-}
+// 16×16 green circle PNG (valid cross-platform)
+const TRAY_ICON_B64 =
+  'data:image/png;base64,' +
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAoklEQVQ4jWNgG' +
+  'AXkACEE+f8MDAz/GRgY/jMwMPxHpv9jYGBgZGBg+E9OHqeBgYHhPwMDw38G' +
+  'BgYGBgaG//8ZGP4zMDD8Z0AGDAz/GRj+MzAw/Ecm/2NgYPjPwMDwn4GBYT8D' +
+  'A8N/BgYGBgaG//8ZGP4zMDD8Z2Bg+M/AwPCfgYHhPwMDw38GBoZ9DAwMDAwM' +
+  'DP8ZGBgYGBj+MzAwMCAN/gcAqREP4SiMxLMAAAAASUVORK5CYII=';
 
 // ── Window ────────────────────────────────────────────────────────────────────
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  const winW = 220, winH = 320;
 
-  const winW = 220;
-  const winH = 320;
-
-  mainWindow = new BrowserWindow({
+  const opts = {
     width: winW,
     height: winH,
     x: width - winW - 16,
@@ -178,9 +202,6 @@ function createWindow() {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    level: 'floating',
-    visibleOnAllWorkspaces: true,
-    visibleOnFullScreen: true,
     skipTaskbar: true,
     resizable: false,
     hasShadow: false,
@@ -188,19 +209,40 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: [`--platform=${process.platform}`],
     },
-  });
+  };
 
+  // macOS-only options
+  if (IS_MAC) {
+    opts.level = 'floating';
+    opts.visibleOnAllWorkspaces = true;
+    opts.visibleOnFullScreen = true;
+  }
+
+  // On Linux without a compositor, transparency may not work —
+  // the renderer CSS has a solid fallback background for this case.
+  if (IS_LINUX) {
+    opts.backgroundColor = '#00000000';
+  }
+
+  mainWindow = new BrowserWindow(opts);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-
   mainWindow.on('closed', () => { mainWindow = null; });
+
+  // Keep window on top on all workspaces (Linux/Windows alternative)
+  if (!IS_MAC) {
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  }
 }
 
 function createTray() {
-  // Build a small 16×16 tray image programmatically
-  const trayImg = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAbwAAAG8B8aLcQwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABUSURBVDiNY/z//z8DJYCJgUIwagCFgBIX+P//PyMjIyMjI2NjYyMjI2NjYyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIw0AAPkECgEUSmIAAAAASUVORK5CYII='
-  );
+  let trayImg;
+  try {
+    trayImg = nativeImage.createFromDataURL(TRAY_ICON_B64);
+  } catch (_) {
+    trayImg = nativeImage.createEmpty();
+  }
 
   tray = new Tray(trayImg);
   tray.setToolTip('FluxMeter');
@@ -210,12 +252,7 @@ function createTray() {
       label: 'Show / Hide FluxMeter',
       click: () => {
         if (!mainWindow) return;
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
+        mainWindow.isVisible() ? mainWindow.hide() : (mainWindow.show(), mainWindow.focus());
       },
     },
     { type: 'separator' },
@@ -249,11 +286,7 @@ ipcMain.on('quit-app', () => app.quit());
 ipcMain.on('minimize-window', () => {
   if (!mainWindow) return;
   isMinimized = !isMinimized;
-  if (isMinimized) {
-    mainWindow.setSize(120, 44);
-  } else {
-    mainWindow.setSize(220, 320);
-  }
+  mainWindow.setSize(isMinimized ? 120 : 220, isMinimized ? 44 : 320);
   mainWindow.webContents.send('toggle-minimized', isMinimized);
 });
 
@@ -262,19 +295,11 @@ ipcMain.on('minimize-window', () => {
 app.whenReady().then(() => {
   createWindow();
   createTray();
-
-  // Initial fetch after window loads
   mainWindow.webContents.once('did-finish-load', () => {
     fetchUsage();
     pollInterval = setInterval(fetchUsage, 60_000);
   });
 });
 
-app.on('window-all-closed', (e) => {
-  // Keep app alive — tray icon stays
-  e.preventDefault();
-});
-
-app.on('before-quit', () => {
-  clearInterval(pollInterval);
-});
+app.on('window-all-closed', (e) => e.preventDefault());
+app.on('before-quit', () => clearInterval(pollInterval));

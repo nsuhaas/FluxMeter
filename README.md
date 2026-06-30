@@ -29,7 +29,7 @@ No frameworks, no bundlers, no build step — just vanilla web tech inside Elect
 
 ## Requirements
 
-- macOS
+- macOS, Windows, or Linux
 - [Claude Code](https://claude.ai/code) installed and authenticated via `claude auth login`
 - Node.js
 
@@ -78,7 +78,13 @@ The widget appears in the bottom-right corner of your screen. It reads your OAut
 
 ## Authentication
 
-FluxMeter reads your OAuth token from the macOS Keychain entry written by `claude auth login`. Nothing is stored inside the app — your token never touches the project folder.
+FluxMeter reads your OAuth token automatically — nothing needs to be configured manually.
+
+| Platform | Token location |
+|---|---|
+| macOS | Keychain (via `security` CLI) |
+| Linux | `~/.claude/.credentials.json` |
+| Windows | `%APPDATA%\Claude\.credentials.json` |
 
 If the widget shows a setup screen, run:
 
@@ -87,6 +93,14 @@ claude auth login
 ```
 
 Then relaunch FluxMeter.
+
+## Linux Notes
+
+Glassmorphism (blur effect) requires a compositor such as [picom](https://github.com/yshui/picom). Without one, the widget falls back to a solid dark background — everything still works.
+
+## Windows Notes
+
+Run from **PowerShell** or **Windows Terminal**. The widget appears in the bottom-right corner and a tray icon appears in the system tray.
 
 ## Security
 
