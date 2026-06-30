@@ -9,9 +9,11 @@ const IS_WIN   = process.platform === 'win32';
 const IS_LINUX = process.platform === 'linux';
 
 let mainWindow = null;
+let reportWindow = null;
 let tray = null;
 let pollInterval = null;
 let cachedUsage = null;
+let cachedRawData = null;
 let isMinimized = false;
 
 const CONFIG_DIR = path.join(os.homedir(), '.fluxmeter');
@@ -166,6 +168,7 @@ async function fetchUsage() {
     };
 
     cachedUsage = payload;
+    cachedRawData = data;
     mainWindow?.webContents.send('usage-update', payload);
   } catch (err) {
     console.error('Fetch error:', err.message);
@@ -282,6 +285,43 @@ ipcMain.handle('refresh-now', async () => {
 });
 
 ipcMain.on('quit-app', () => app.quit());
+
+ipcMain.on('open-report', () => {
+  if (reportWindow && !reportWindow.isDestroyed()) {
+    reportWindow.focus();
+    return;
+  }
+  reportWindow = new BrowserWindow({
+    width: 560,
+    height: 620,
+    minWidth: 480,
+    minHeight: 500,
+    title: 'FluxMeter — Usage Report',
+    backgroundColor: '#13131f',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  reportWindow.loadFile(path.join(__dirname, 'renderer', 'report.html'));
+  reportWindow.on('closed', () => { reportWindow = null; });
+});
+
+ipcMain.handle('get-report-data', () => {
+  let stats = null;
+  try {
+    const statsPath = path.join(os.homedir(), '.claude', 'stats-cache.json');
+    stats = JSON.parse(fs.readFileSync(statsPath, 'utf8'));
+  } catch (_) {}
+
+  return {
+    usage: cachedUsage,
+    raw: cachedRawData,
+    stats,
+    generatedAt: Date.now(),
+  };
+});
 
 ipcMain.on('minimize-window', () => {
   if (!mainWindow) return;

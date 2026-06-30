@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>FluxMeter — Usage Report</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #0e0e1a;
+    --surface: #16162a;
+    --border:  rgba(255,255,255,0.08);
+    --text:    #e8e8f0;
+    --muted:   #6b6b8a;
+    --green:   #00e676;
+    --yellow:  #ffeb3b;
+    --orange:  #ff9800;
+    --red:     #f44336;
+    --accent:  #7c7cff;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Layout ── */
+  #app { display: flex; flex-direction: column; min-height: 100vh; }
+
+  header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  .logo { font-size: 11px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  #generated-at { font-size: 11px; color: var(--muted); }
+
+  main { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* ── Usage bars ── */
+  .usage-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .usage-row:last-child { margin-bottom: 0; }
+  .usage-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .usage-name  { font-size: 13px; font-weight: 500; }
+  .usage-meta  { font-size: 11px; color: var(--muted); }
+  .bar-track {
+    height: 8px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+  }
+  .usage-sub { font-size: 11px; color: var(--muted); }
+
+  /* ── Two-col grid for summary stats ── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat-box {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat-box .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+  .stat-box .value { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+  .stat-box .sub   { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Model table ── */
+  .model-table { width: 100%; border-collapse: collapse; }
+  .model-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    padding: 0 8px 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .model-table th:not(:first-child) { text-align: right; }
+  .model-table td {
+    padding: 10px 8px 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 12px;
+  }
+  .model-table td:not(:first-child) { text-align: right; color: var(--muted); }
+  .model-table tr:last-child td { border-bottom: none; }
+  .model-name { font-weight: 600; color: var(--text); }
+  .model-badge {
+    display: inline-block;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: rgba(124,124,255,0.15);
+    color: var(--accent);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  /* ── Activity chart ── */
+  #activity-chart {
+    width: 100%;
+    overflow: hidden;
+  }
+  .chart-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 80px;
+    padding-bottom: 24px;
+    position: relative;
+  }
+  .chart-bars::after {
+    content: '';
+    position: absolute;
+    bottom: 24px;
+    left: 0; right: 0;
+    height: 1px;
+    background: var(--border);
+  }
+  .bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+    justify-content: flex-end;
+  }
+  .bar-col .bar {
+    width: 100%;
+    border-radius: 3px 3px 0 0;
+    background: var(--accent);
+    opacity: 0.7;
+    min-height: 2px;
+    transition: opacity 0.2s;
+  }
+  .bar-col:hover .bar { opacity: 1; }
+  .bar-col .bar-date {
+    font-size: 9px;
+    color: var(--muted);
+    white-space: nowrap;
+    transform: rotate(-40deg);
+    transform-origin: top center;
+    margin-top: 4px;
+  }
+
+  /* ── No data ── */
+  .no-data { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
+
+  /* ── Loading spinner ── */
+  #loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex: 1;
+    color: var(--muted);
+  }
+  .spin {
+    width: 28px; height: 28px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer {
+    padding: 12px 24px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <div class="logo">FluxMeter</div>
+      <h1>Usage Report</h1>
+    </div>
+    <div id="generated-at">Loading…</div>
+  </header>
+
+  <main id="main-content">
+    <div id="loading">
+      <div class="spin"></div>
+      <span>Fetching data…</span>
+    </div>
+  </main>
+
+  <footer id="footer" style="display:none">
+    Data sourced from Anthropic OAuth API + local Claude Code stats cache
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  function fmt(n) {
+    if (n == null) return '—';
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function countdown(iso) {
+    if (!iso) return '—';
+    const diff = new Date(iso) - Date.now();
+    if (diff <= 0) return 'now';
+    const h = Math.floor(diff / 3_600_000);
+    const m = Math.floor((diff % 3_600_000) / 60_000);
+    const d = Math.floor(h / 24);
+    if (d > 0) return `${d}d ${h % 24}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function barColor(pct) {
+    if (pct <= 10) return '#f44336';
+    if (pct <= 25) return '#ff9800';
+    if (pct <= 50) return '#ffeb3b';
+    return '#00e676';
+  }
+
+  function usageBar(usedPct) {
+    const pct = Math.max(0, Math.min(100, usedPct ?? 0));
+    const remaining = 100 - pct;
+    const color = barColor(remaining);
+    return `
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>`;
+  }
+
+  function modelLabel(id) {
+    return id
+      .replace(/^claude-/, '')
+      .replace(/-(\d)/, ' $1')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  function render(data) {
+    const { usage, raw, stats, generatedAt } = data;
+
+    document.getElementById('generated-at').textContent =
+      'Generated ' + new Date(generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const main = document.getElementById('main-content');
+    main.innerHTML = '';
+
+    // ── 1. Current Usage ─────────────────────────────────────────────────────
+    const sessionPct = usage?.sessionPercent ?? 0;
+    const weeklyPct  = usage?.weeklyPercent  ?? 0;
+
+    main.insertAdjacentHTML('beforeend', `
+      <div class="card">
+        <div class="card-title">Current Usage</div>
+
+        <div class="usage-row">
+          <div class="usage-label">
+            <span class="usage-name">5-Hour Session</span>
+            <span class="usage-meta">${sessionPct}% used · resets in ${countdown(usage?.resetsAt)}</span>
+          </div>
+          ${usageBar(sessionPct)}
+          <div class="usage-sub">Resets ${fmtDate(usage?.resetsAt)}</div>
+        </div>
+
+        <div class="usage-row">
+          <div class="usage-label">
+            <span class="usage-name">7-Day Weekly</span>
+            <span class="usage-meta">${weeklyPct}% used · resets in ${countdown(raw?.seven_day?.resets_at)}</span>
+          </div>
+          ${usageBar(weeklyPct)}
+          <div class="usage-sub">Resets ${fmtDate(raw?.seven_day?.resets_at)}</div>
+        </div>
+      </div>
+    `);
+
+    // ── 2. Summary Stats ─────────────────────────────────────────────────────
+    const totalMsgs     = stats?.totalMessages    ?? '—';
+    const totalSessions = stats?.totalSessions    ?? '—';
+    const totalOut      = Object.values(stats?.modelUsage ?? {}).reduce((s, m) => s + (m.outputTokens ?? 0), 0);
+    const totalIn       = Object.values(stats?.modelUsage ?? {}).reduce((s, m) => s + (m.inputTokens ?? 0), 0);
+
+    main.insertAdjacentHTML('beforeend', `
+      <div class="card">
+        <div class="card-title">All-Time Summary</div>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="label">Total Messages</div>
+            <div class="value">${fmt(totalMsgs)}</div>
+            <div class="sub">across all sessions</div>
+          </div>
+          <div class="stat-box">
+            <div class="label">Total Sessions</div>
+            <div class="value">${fmt(totalSessions)}</div>
+            <div class="sub">conversations</div>
+          </div>
+          <div class="stat-box">
+            <div class="label">Output Tokens</div>
+            <div class="value">${fmt(totalOut)}</div>
+            <div class="sub">generated by Claude</div>
+          </div>
+          <div class="stat-box">
+            <div class="label">Input Tokens</div>
+            <div class="value">${fmt(totalIn)}</div>
+            <div class="sub">sent to Claude</div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // ── 3. Model Breakdown ───────────────────────────────────────────────────
+    const modelUsage = stats?.modelUsage ?? {};
+    const modelKeys  = Object.keys(modelUsage);
+
+    if (modelKeys.length > 0) {
+      const maxOut = Math.max(...modelKeys.map(k => modelUsage[k].outputTokens ?? 0));
+      const rows = modelKeys
+        .sort((a, b) => (modelUsage[b].outputTokens ?? 0) - (modelUsage[a].outputTokens ?? 0))
+        .map(k => {
+          const m = modelUsage[k];
+          const isPrimary = (m.outputTokens ?? 0) === maxOut;
+          return `<tr>
+            <td>
+              <span class="model-name">${modelLabel(k)}</span>
+              ${isPrimary ? '<span class="model-badge">primary</span>' : ''}
+            </td>
+            <td>${fmt(m.outputTokens)}</td>
+            <td>${fmt(m.inputTokens)}</td>
+            <td>${fmt(m.cacheReadInputTokens)}</td>
+          </tr>`;
+        }).join('');
+
+      main.insertAdjacentHTML('beforeend', `
+        <div class="card">
+          <div class="card-title">Model Breakdown</div>
+          <table class="model-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th style="text-align:right">Output</th>
+                <th style="text-align:right">Input</th>
+                <th style="text-align:right">Cache Reads</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `);
+    }
+
+    // ── 4. Daily Activity Chart ───────────────────────────────────────────────
+    const daily = (stats?.dailyActivity ?? []).slice(-14); // last 14 days
+
+    if (daily.length > 0) {
+      const maxMsgs = Math.max(...daily.map(d => d.messageCount ?? 0), 1);
+      const bars = daily.map(d => {
+        const h = Math.round(((d.messageCount ?? 0) / maxMsgs) * 56);
+        const shortDate = d.date?.slice(5) ?? ''; // MM-DD
+        return `<div class="bar-col" title="${d.date}: ${d.messageCount} messages">
+          <div class="bar" style="height:${h}px"></div>
+          <div class="bar-date">${shortDate}</div>
+        </div>`;
+      }).join('');
+
+      main.insertAdjacentHTML('beforeend', `
+        <div class="card">
+          <div class="card-title">Daily Activity (last ${daily.length} days)</div>
+          <div id="activity-chart">
+            <div class="chart-bars">${bars}</div>
+          </div>
+        </div>
+      `);
+    }
+
+    document.getElementById('footer').style.display = '';
+  }
+
+  // ── Load data ───────────────────────────────────────────────────────────────
+  window.fluxAPI.getReportData().then(data => {
+    if (!data?.usage && !data?.stats) {
+      document.getElementById('main-content').innerHTML =
+        '<div class="no-data">No data yet — open the main widget and wait for a refresh.</div>';
+      return;
+    }
+    render(data);
+  }).catch(e => {
+    document.getElementById('main-content').innerHTML =
+      `<div class="no-data">Error loading data: ${e.message}</div>`;
+  });
+
+})();
+</script>
+</body>
+</html>

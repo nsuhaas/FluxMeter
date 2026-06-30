@@ -324,6 +324,7 @@
   <div id="header">
     <span id="app-name">FluxMeter</span>
     <div id="header-btns">
+      <button id="btn-report"  class="hdr-btn" title="Usage Report">📊</button>
       <button id="btn-minimize" class="hdr-btn" title="Minimize">—</button>
       <button id="btn-close"    class="hdr-btn" title="Quit">✕</button>
     </div>
@@ -617,9 +618,10 @@
     if (e.key === 'Enter') saveBtn.click();
   });
 
-  // ── Minimize / Expand / Close ─────────────────────────────────────────────
+  // ── Minimize / Expand / Report / Close ───────────────────────────────────
   btnMin.addEventListener('click', () => window.fluxAPI.minimize());
   document.getElementById('mini-expand').addEventListener('click', () => window.fluxAPI.minimize());
+  document.getElementById('btn-report').addEventListener('click', () => window.fluxAPI.openReport());
   document.getElementById('btn-close').addEventListener('click', () => window.fluxAPI.quit());
 
   // ── Status dot = manual refresh ───────────────────────────────────────────
