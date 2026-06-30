@@ -26,6 +26,7 @@ No frameworks, no bundlers, no build step — just vanilla web tech inside Elect
 - Reads credentials directly from macOS Keychain — no token setup needed
 - Collapses to a tiny pill when you want it out of the way
 - Polls every 60 seconds, serves stale cache on rate limit
+- **Usage Report** — detailed breakdown window with charts and token stats
 
 ## Requirements
 
@@ -54,10 +55,20 @@ The widget appears in the bottom-right corner of your screen. It reads your OAut
 | Action | How |
 |---|---|
 | Move | Drag the widget anywhere |
+| Open usage report | Click `📊` in the header |
 | Minimize to pill | Click `—` in the header |
 | Expand from pill | Click `↑` on the pill |
 | Manual refresh | Click the status dot (bottom-left) |
 | Quit | Click `✕` in the header, or right-click the menu bar icon → Quit |
+
+### Usage Report
+
+Click the **📊** button to open a detailed report window showing:
+
+- **Current Usage** — 5-hour session and 7-day weekly progress bars with exact reset timestamps
+- **All-Time Summary** — total messages, sessions, output and input token counts
+- **Model Breakdown** — per-model token usage table with your primary model highlighted
+- **Daily Activity** — bar chart of the last 14 days of message counts
 
 ### Status dot colors
 
