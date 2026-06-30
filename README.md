@@ -70,6 +70,8 @@ Click the **📊** button to open a detailed report window showing:
 - **Model Breakdown** — per-model token usage table with your primary model highlighted
 - **Daily Activity** — bar chart of the last 14 days of message counts
 
+![FluxMeter Report](https://github.com/nsuhaas/FluxMeter/raw/main/preview-report.png)
+
 ### Status dot colors
 
 | Color | Meaning |
